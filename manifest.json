@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "极简 PDF 阅读器",
+  "version": "2.1",
+  "description": "沉浸式全屏 PDF 阅读器-支持黑夜模式",
+  "permissions": [
+    "activeTab"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "全屏打开 PDF 阅读器"
+  }
+}

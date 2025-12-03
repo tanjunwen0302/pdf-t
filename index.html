@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 阅读器</title>
+    <script src="pdf.min.js"></script>
+
+    <style>
+        /* --- 基础样式 --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        html, body {
+            width: 100%;
+            height: 100vh;
+            overflow: hidden; 
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            background: #f3f4f6; 
+            color: #333; 
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #999; }
+
+        body.invert-mode ::-webkit-scrollbar-thumb { background: #555; }
+        
+        /* --- Header --- */
+        header { 
+            height: 50px; 
+            background: white; 
+            border-bottom: 1px solid #ddd; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 16px; 
+            flex-shrink: 0; 
+            z-index: 10; 
+        }
+        .logo { font-weight: bold; color: #2563eb; font-size: 18px; }
+        .toolbar-group { display: flex; align-items: center; gap: 10px; }
+        
+        button, .btn-upload {
+            border: 1px solid #ddd; background: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; color: #333;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        button:hover, .btn-upload:hover { background: #f9fafb; border-color: #bbb; }
+        
+        .btn-primary { background: #2563eb; color: white; border: none; }
+        .btn-primary:hover { background: #1d4ed8; }
+
+        input[type="number"] { width: 50px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; text-align: center; }
+
+        /* --- Layout --- */
+        .main-container { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+        #sidebar { 
+            width: 260px; 
+            background: white; 
+            border-right: 1px solid #ddd; 
+            display: flex; 
+            flex-direction: column; 
+            transition: width 0.3s ease; 
+            flex-shrink: 0; 
+        }
+        #sidebar.closed { width: 0; border: none; }
+        
+        .sidebar-tabs { display: flex; border-bottom: 1px solid #ddd; }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; font-size: 13px; background: #f9fafb; color: #666; }
+        .tab.active { background: white; color: #2563eb; border-bottom: 2px solid #2563eb; font-weight: bold; }
+        
+        .sidebar-content { flex: 1; overflow-y: auto; padding: 10px; scroll-behavior: smooth; }
+
+        /* 缩略图 */
+        .thumbnail { 
+            margin-bottom: 15px; 
+            cursor: pointer; 
+            text-align: center; 
+            opacity: 0.7; 
+            transition: opacity 0.2s; 
+            min-height: 100px; 
+            position: relative;
+            border-radius: 4px;
+            padding: 4px;
+        }
+        .thumbnail:hover { opacity: 1; background: #f0f9ff; }
+        .thumbnail.active { opacity: 1; background: #eff6ff; }
+        .thumbnail.active canvas { outline: 2px solid #2563eb; box-shadow: 0 0 8px rgba(37, 99, 235, 0.3); }
+        .thumbnail canvas { border: 1px solid #ddd; background: white; max-width: 100%; display: block; margin: 0 auto; }
+        .thumb-page-num { font-size: 12px; color: #666; margin-top: 5px; }
+
+        /* 目录树 */
+        .outline-item { margin-bottom: 2px; }
+        .outline-link { 
+            display: block; padding: 6px 8px; color: #444; text-decoration: none; font-size: 13px; border-radius: 4px; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+            border-left: 3px solid transparent;
+        }
+        .outline-link:hover { background: #f3f4f6; }
+        
+        .outline-link.active { 
+            background: #eff6ff; 
+            color: #2563eb; 
+            font-weight: bold;
+            border-left-color: #2563eb;
+        }
+        
+        .outline-children { padding-left: 16px; border-left: 1px solid #eee; margin-left: 4px; }
+
+        /* 主视图 */
+        #main-scroll { flex: 1; overflow-y: auto; background: #e5e7eb; padding: 30px; display: block; position: relative; text-align: center; }
+        #pdf-render-container { display: inline-block; padding-bottom: 100px; }
+        
+        .page-container {
+            margin-bottom: 30px;
+            position: relative;
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            min-height: 600px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .page-container canvas { display: block; width: 100%; height: 100%; }
+
+        .toggle-sidebar-btn { position: absolute; bottom: 20px; left: 0; background: white; border: 1px solid #ddd; padding: 8px; border-radius: 0 4px 4px 0; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); z-index: 20; cursor: pointer; }
+
+        .loader-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.8); display: flex; align-items: center; justify-content: center; z-index: 50; display: none; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #2563eb; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .empty-state { text-align: center; color: #888; margin-top: 20vh; }
+
+        /* 黑夜模式 */
+        body.invert-mode { background: #222; color: #e5e5e5; }
+        body.invert-mode header { background: #1a1a1a; border-bottom-color: #333; }
+        body.invert-mode .logo { color: #60a5fa; }
+        body.invert-mode button, body.invert-mode .btn-upload, body.invert-mode input { background: #333; border-color: #444; color: #eee; }
+        body.invert-mode #sidebar { background: #1a1a1a; border-right-color: #333; }
+        body.invert-mode .tab { background: #222; color: #888; }
+        body.invert-mode .tab.active { background: #1a1a1a; color: #60a5fa; border-bottom-color: #60a5fa; }
+        body.invert-mode .outline-link { color: #bbb; }
+        body.invert-mode .outline-link.active { background: #333; color: #60a5fa; }
+        body.invert-mode #main-scroll { background: #000; }
+        body.invert-mode .page-container canvas, body.invert-mode .thumbnail canvas { filter: invert(100%) hue-rotate(180deg) contrast(90%); }
+        body.invert-mode .page-container { background: #1a1a1a; }
+        body.invert-mode .thumbnail:hover { background: #333; }
+        body.invert-mode .thumbnail.active { background: #333; }
+
+    </style>
+</head>
+<!-- 默认加上 invert-mode 类 -->
+<body class="invert-mode">
+    <header>
+        <div class="logo"><i class="fas fa-book-reader" style="margin-right:8px;"></i> PDF T</div>
+        <div class="toolbar-group">
+            <button id="prev-page">◀</button>
+            <span><input type="number" id="page-num" value="0"> / <span id="page-count">0</span></span>
+            <button id="next-page">▶</button>
+        </div>
+        <div class="toolbar-group">
+            <button id="zoom-out">－</button>
+            <span id="zoom-level" style="font-size: 13px; width: 40px; text-align: center;">100%</span>
+            <button id="zoom-in">＋</button>
+            <!-- 默认显示“日间”，点击切换回日间模式 -->
+            <button id="toggle-invert">日间</button>
+            <label class="btn-upload btn-primary">打开文件 <input type="file" id="file-input" accept="application/pdf" style="display: none;"></label>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div id="sidebar">
+            <div class="sidebar-tabs">
+                <div class="tab active" id="tab-thumbs">缩略图</div>
+                <div class="tab" id="tab-outline">目录</div>
+            </div>
+            <div class="sidebar-content" id="sidebar-content">
+                <div id="thumbnails-container"><p style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">暂无内容</p></div>
+                <div id="outline-container" style="display: none;"></div>
+            </div>
+        </div>
+        <button id="toggle-sidebar" class="toggle-sidebar-btn">≡</button>
+        <div id="main-scroll">
+            <div id="pdf-render-container">
+                <div class="empty-state"><h3>开始阅读</h3><p style="font-size: 14px; margin-top: 10px;">点击右上角“打开文件”导入 PDF</p></div>
+            </div>
+        </div>
+        <div id="loading-indicator" class="loader-overlay">
+            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px;">
+                <div class="loader"></div><span style="font-size: 14px; color: #333;" id="loading-text">处理中...</span>
+            </div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
